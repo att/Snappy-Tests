@@ -1,0 +1,83 @@
+#!/bin/bash
+
+ME=${0##*/}
+echo "=== $ME === start:$(date)"
+#-      -       -       -
+
+if [[ -z "${USR_HOST}" ]]; then
+  echo "exit script.. USR_HOST var is not set" ; exit 1
+else
+  USR_HOST="${USR_HOST}"
+fi
+if [[ -z "${RC_FILE}" ]]; then
+  echo "exit script.. RC_FILE var is not set" ; exit 1
+else
+  RC_FILE="${RC_FILE}"
+fi
+if [[ -z "${VOLUME_CREATE_CMD}" ]]; then
+  echo "exit script.. VOLUME_CREATE_CMD var is not set" ; exit 1
+fi
+
+
+USAGE="Usage:  ./$ME  <vmID>  <volsize-in-GB> <volfill-in-MB> <filltype (compressible/incompressible/mixed)>  <OPT. vol_ID>   <OPT. mountpoint_dir>"
+if [ "$#" -lt 4 ]; then
+    echo -e $USAGE
+    exit 1
+fi
+
+VM_ID=$1
+VOL_SIZE=$2
+FILLDATA_MB=$3
+FILLTYPE=$4
+VOL_ID=$5
+MOUNTDIR=$6
+MOUNT_DEFAULTDIR="/mnt/xxx"
+
+if [ "$FILLTYPE" != "compressible" ] && [ "$FILLTYPE" != "incompressible" ]  && [ "$FILLTYPE" != "mixed" ]
+then
+    echo "filltype must be either:  compressible|incompressible|mixed"
+    exit 1
+fi
+
+if [[ -z "$MOUNTDIR" ]]
+then
+  MOUNTDIR=$MOUNT_DEFAULTDIR
+fi
+if [ ! -d "$MOUNTDIR" ]; then
+    mkdir $MOUNTDIR
+    if [ ! -d "$MOUNTDIR" ]; then
+        echo "err: cannot create mount dir: $MOUNTDIR. bye."
+        exit 1
+    fi
+fi
+
+#create a test vol if vol-id was not specified
+if [[ -z "$VOL_ID" ]]
+then
+    VOL_NAME=$(echo "tempvol_"$(date +%s) )
+    echo $VOL_NAME
+    sleep 2
+    VOL_ID=$( ssh $USR_HOST "source $RC_FILE; $VOLUME_CREATE_CMD $VOL_NAME $VOL_SIZE" |grep -w id| cut -d'|' -f3)
+    sleep 5
+fi
+
+echo " vmid:$VM_ID  volsizGB:$VOL_SIZE  fillsizMB:$FILLDATA_MB  volid:$VOL_ID mountdir:$MOUNTDIR"
+read -t 5 -p "--- vol to be used: $VOL_ID.  Proceed in 5s---"
+
+./a_vol_unmount_rmdir_detach $VM_ID $VOL_ID $MOUNTDIR
+./a_vol_attach_fmt_detach $VM_ID $VOL_ID
+./a_vol_attach_mnt $VM_ID  $VOL_ID   $MOUNTDIR
+echo "date:$(date)"
+./a_vol_filldata  $MOUNTDIR $FILLDATA_MB   $VOL_ID  $FILLTYPE
+echo "date:$(date)"
+du -h $MOUNTDIR
+read -t 5  -p "Detach vol and do backup in 5 sec" ; echo
+./a_vol_unmount_detach $VM_ID $VOL_ID   $MOUNTDIR 
+
+echo "backing up.."   ; read -t 3 -p " "
+#source the backup script to get the var:Z_JOBID_BACKUP passed back..
+. ./a_vol_backup $VOL_ID  Y
+echo
+./db_get_job_info $Z_JOBID_BACKUP
+echo
+                                          

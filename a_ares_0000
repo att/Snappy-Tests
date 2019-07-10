@@ -1,0 +1,58 @@
+#!/bin/bash
+#note: for now, snappy restores only to the volume the backup originated from.
+
+ME=${0##*/}
+echo;echo; echo "=== $ME === start:$(date)"
+#-      -       -       -
+
+if [[ -z "${USR_HOST}" ]]; then
+  echo "exit script.. USR_HOST var is not set" ; exit 1
+else
+  USR_HOST="${USR_HOST}"
+fi
+if [[ -z "${RC_FILE}" ]]; then
+  echo "exit script.. RC_FILE var is not set" ; exit 1
+else
+  RC_FILE="${RC_FILE}"
+fi
+
+
+USAGE="Usage:  ./$ME  <vmID> <volumeID> <backup_jobID>  <OPT. mountpoint_dir>"
+if [ "$#" -lt 3 ]; then
+    echo -e $USAGE
+    exit 1
+fi
+
+VM_ID=$1
+VOL_ID=$2
+JOB_ID=$3
+MOUNTDIR=$4
+
+if [[ -z "$MOUNTDIR" ]] 
+then
+  MOUNTDIR="/mnt/xxx"
+fi
+
+
+echo "$VM_ID $VOL_ID $JOBID $MOUNTDIR" 
+read -t 5 -p "-  -  -  - "
+
+
+./a_vol_unmount_rmdir_detach $VM_ID $VOL_ID $MOUNTDIR
+./a_vol_attach_fmt_detach $VM_ID $VOL_ID
+
+read -t 5  -p "begin vol restore in 5 sec.. (^c to abort).."
+./a_vol_restore  $VM_ID $JOBID y
+read -t 5  -p "vol Restored.  Will attach in 5sec.. (^c to abort).."
+
+./a_vol_attach_mnt $VM_ID $VOL_ID $MOUNTDIR
+echo "- -restored. getting MD5 hash..(date=$(date)"
+md5deep -rl $MOUNTDIR  2>/dev/null | awk '{print $1}' | sort -n | md5sum     
+read -t 10  -p "MD5 hash done - date=$(date).  CleanUp/detach in 10sec.. (^c to abort).."
+
+#clean up/detach..
+./a_vol_unmount_rmdir_detach $VM_ID $VOL_ID $MOUNTDIR
+./a_vol_attach_fmt_detach $VM_ID $VOL_ID  
+
+echo "=== $ME === done:$(date)"
+
